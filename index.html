@@ -760,11 +760,13 @@
             const imgCenterY = (canvasAreaH - originalH) / 2 + imgState.y + (originalH / 2);
 
             ctx.translate(imgCenterX, imgCenterY);
-            ctx.rotate(imgState.rotate * Math.PI / 180);
-            
+
+            // 注意: プレビュー(CSS)は「回転 → 反転/拡大縮小」の順で効果が乗るため、
+            // 保存側でも同じ見た目になるよう、rotateより先にscaleを呼び出す
             const scaleX = imgState.flipX ? -imgState.scale : imgState.scale;
             const scaleY = imgState.scale;
             ctx.scale(scaleX, scaleY);
+            ctx.rotate(imgState.rotate * Math.PI / 180);
 
             const cssBrightness = 1 + (imgState.brightness / 100);
             ctx.filter = `brightness(${cssBrightness}) hue-rotate(${imgState.hue}deg)`;
