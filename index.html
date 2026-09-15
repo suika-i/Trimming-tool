@@ -1,0 +1,766 @@
+﻿<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>画像トリミングツール</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: sans-serif;
+            display: flex;
+            height: 100vh;
+            background-color: #f0f2f5;
+            color: #333;
+            overflow: hidden;
+        }
+        /* サイドバー */
+        .sidebar {
+            width: 340px;
+            background: #fff;
+            border-right: 1px solid #ddd;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.05);
+            z-index: 10;
+            overflow-y: auto;
+        }
+        .sidebar h2 {
+            font-size: 1.2rem;
+            margin-bottom: 5px;
+            color: #2c3e50;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .control-group label {
+            font-size: 0.9rem;
+            font-weight: bold;
+            color: #555;
+        }
+        .input-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .input-row input[type="number"] {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+        
+        /* モード切替ラジオボタン用 */
+        .mode-select {
+            display: flex;
+            gap: 15px;
+            font-size: 0.95rem;
+            font-weight: bold;
+            cursor: pointer;
+            align-items: center;
+            padding: 4px 0;
+        }
+        .mode-select input {
+            cursor: pointer;
+        }
+
+        /* スポイト結果表示エリア */
+        .color-picker-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #f9f9f9;
+            padding: 8px 12px;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+        .color-chip {
+            width: 24px;
+            height: 24px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            background-color: transparent;
+        }
+
+        /* スライダー ＋ マイナス・プラスボタンのレイアウト */
+        .slider-control-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .step-btn {
+            background-color: #e0e0e0;
+            border: none;
+            border-radius: 4px;
+            width: 32px;
+            height: 32px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            color: #333;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: background 0.1s;
+            flex-shrink: 0;
+        }
+        .step-btn:hover {
+            background-color: #d0d0d0;
+        }
+        .step-btn:active {
+            background-color: #bcbcbc;
+        }
+        input[type="range"] {
+            flex: 1;
+            cursor: pointer;
+        }
+
+        .btn {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 4px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+            text-align: center;
+            margin-top: 10px;
+        }
+        .btn:hover {
+            background-color: #2980b9;
+        }
+        .info-text {
+            font-size: 0.8rem;
+            color: #7f8c8d;
+            line-height: 1.4;
+        }
+
+        /* 作業スペース */
+        .workspace-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #e4e7eb;
+            background-image: linear-gradient(45deg, #d5d9df 25%, transparent 25%), 
+                              linear-gradient(-45deg, #d5d9df 25%, transparent 25%), 
+                              linear-gradient(45deg, transparent 75%, #d5d9df 75%), 
+                              linear-gradient(-45deg, transparent 75%, #d5d9df 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+        
+        /* ズーム・パン対象のラッパー */
+        .workspace-scaler {
+            position: absolute;
+            transform-origin: center center;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* 画像をドラッグ＆ドロップする領域 兼 キャンバスサイズ（ここを拡大） */
+        .canvas-area {
+            position: relative;
+            width: 2000px;  /* 変更: 1000pxから拡大 */
+            height: 2000px; /* 変更: 800pxから拡大 */
+            background: #ffffff;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* 読み込んだ画像 */
+        #target-image {
+            position: absolute;
+            cursor: grab;
+            transform-origin: center center;
+        }
+        #target-image.mode-move:active {
+            cursor: grabbing;
+        }
+        #target-image.mode-eyedropper {
+            cursor: crosshair;
+        }
+        
+        /* センターの切り抜き枠（プレビュー用） */
+        .crop-frame {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            border: 2px dashed #ffeb3b;
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        /* ドロップ時のオーバーレイメッセージ */
+        .drop-message {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(52, 152, 219, 0.85);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.5rem;
+            font-weight: bold;
+            z-index: 20;
+            transition: opacity 0.3s;
+            pointer-events: none;
+        }
+        .drop-message.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 左側：サイドバー -->
+    <div class="sidebar">
+        <h2>画像トリミングツール</h2>
+
+        <div class="control-group">
+            <input type="file" id="file-input" accept="image/*" style="display:none;">
+            <button class="btn" id="select-file-btn" style="margin-top:0;">画像を選択</button>
+        </div>
+
+        <div class="control-group">
+            <label>切り抜きサイズ (Px)</label>
+            <div class="input-row">
+                <span>縦</span>
+                <input type="number" id="crop-h" value="500" min="10" max="3000">
+                <span>横</span>
+                <input type="number" id="crop-w" value="500" min="10" max="3000">
+            </div>
+        </div>
+
+        <hr style="border:0; border-top:1px solid #eee;">
+
+        <div class="control-group">
+            <label>操作モード</label>
+            <div style="display: flex; gap: 20px;">
+                <label class="mode-select"><input type="radio" name="tool-mode" value="move" checked> 画像移動</label>
+                <label class="mode-select"><input type="radio" name="tool-mode" value="eyedropper"> 透過（スポイト）</label>
+            </div>
+        </div>
+
+        <div class="control-group" id="transparent-settings" style="display: none; background: #f4f6f8; padding: 10px; border-radius: 6px;">
+            <label style="margin-bottom: 4px;">選択された透過カラー</label>
+            <div class="color-picker-info">
+                <div class="color-chip" id="selected-color-chip"></div>
+                <span id="selected-color-text" style="font-family: monospace; font-weight: bold;">未選択</span>
+            </div>
+            
+            <label style="margin-top: 8px; display: flex; align-items: center; gap: 6px; font-size: 0.85rem; font-weight: normal; cursor: pointer;">
+                <input type="checkbox" id="enable-tolerance" style="cursor: pointer;"> 誤差（許容範囲）も一緒に抜く
+            </label>
+
+            <div id="tolerance-container" style="margin-top: 6px; display: none;">
+                <label style="font-size: 0.8rem; color: #666;">許容度 (<span id="tolerance-val">20</span>)</label>
+                <div class="slider-control-row">
+                    <button class="step-btn" id="tolerance-minus" style="width:28px; height:28px; font-size:0.9rem;">－</button>
+                    <input type="range" id="tolerance-range" min="1" max="100" value="20">
+                    <button class="step-btn" id="tolerance-plus" style="width:28px; height:28px; font-size:0.9rem;">＋</button>
+                </div>
+            </div>
+            
+            <button class="btn" id="reset-transparent-btn" style="padding: 6px; font-size: 0.85rem; background-color: #95a5a6; margin-top: 8px;">透過をリセット</button>
+        </div>
+
+        <hr style="border:0; border-top:1px solid #eee;">
+
+        <div class="control-group">
+            <label>画像 拡大・縮小 (<span id="scale-val">100</span>%)</label>
+            <div class="slider-control-row">
+                <button class="step-btn" id="scale-minus">－</button>
+                <input type="range" id="img-scale" min="10" max="300" value="100">
+                <button class="step-btn" id="scale-plus">＋</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>画像 回転 (<span id="rotate-val">0</span>°)</label>
+            <div class="slider-control-row">
+                <button class="step-btn" id="rotate-minus">－</button>
+                <input type="range" id="img-rotate" min="0" max="360" value="0">
+                <button class="step-btn" id="rotate-plus">＋</button>
+            </div>
+        </div>
+
+        <!-- 左右反転 -->
+        <div class="control-group">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" id="img-flip-x" style="cursor: pointer; width: 16px; height: 16px;"> 左右反転
+            </label>
+        </div>
+
+        <!-- 明度 -->
+        <div class="control-group">
+            <label>画像 明度 (<span id="brightness-val">0</span>%)</label>
+            <div class="slider-control-row">
+                <button class="step-btn" id="brightness-minus">－</button>
+                <input type="range" id="img-brightness" min="-100" max="100" value="0">
+                <button class="step-btn" id="brightness-plus">＋</button>
+            </div>
+        </div>
+
+        <!-- 色彩（色相） -->
+        <div class="control-group">
+            <label>画像 色彩 (<span id="hue-val">0</span>°)</label>
+            <div class="slider-control-row">
+                <button class="step-btn" id="hue-minus">－</button>
+                <input type="range" id="img-hue" min="-180" max="180" value="0">
+                <button class="step-btn" id="hue-plus">＋</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>画像 全体透明度 (<span id="opacity-val">100</span>%)</label>
+            <div class="slider-control-row">
+                <button class="step-btn" id="opacity-minus">－</button>
+                <input type="range" id="img-opacity" min="10" max="100" value="100">
+                <button class="step-btn" id="opacity-plus">＋</button>
+            </div>
+        </div>
+
+        <hr style="border:0; border-top:1px solid #eee;">
+
+        <div class="control-group">
+            <label>作業スペース 表示倍率 (<span id="workspace-zoom-val">100</span>%)</label>
+            <div class="slider-control-row">
+                <button class="step-btn" id="zoom-minus">－</button>
+                <!-- 変更: minを10に変更 -->
+                <input type="range" id="workspace-zoom" min="10" max="200" value="100">
+                <button class="step-btn" id="zoom-plus">＋</button>
+            </div>
+        </div>
+
+        <button class="btn" id="save-btn">現在の枠内をPNG保存</button>
+        
+        <div class="info-text">
+            ・右側の作業スペースに画像をドロップして読み込めます。<br>
+            ・「透過」モード時は画像クリックで背景色を抜けます。
+        </div>
+    </div>
+
+    <!-- 右側：作業スペース -->
+    <div class="workspace-container" id="drop-zone">
+        <div class="drop-message" id="drop-msg">
+            ここに画像をドラッグ＆ドロップしてください
+        </div>
+
+        <!-- ズーム用のラッパー -->
+        <div class="workspace-scaler" id="workspace-scaler">
+            <div class="canvas-area" id="canvas-area">
+                <!-- 動かす画像（プレビューはキャンバス経由でリアルタイム透過） -->
+                <canvas id="preview-canvas" style="position: absolute; display: none; cursor: grab;"></canvas>
+                <!-- 中央の切り抜き枠（見た目のガイド） -->
+                <div class="crop-frame" id="crop-frame"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 非表示用の元画像格納用 -->
+    <img id="source-image" alt="" style="display: none;">
+
+    <script>
+        const dropZone = document.getElementById('drop-zone');
+        const dropMsg = document.getElementById('drop-msg');
+        const sourceImage = document.getElementById('source-image');
+        const canvasArea = document.getElementById('canvas-area');
+        const previewCanvas = document.getElementById('preview-canvas');
+        const previewCtx = previewCanvas.getContext('2d', { willReadFrequently: true });
+        const cropFrame = document.getElementById('crop-frame');
+        
+        const cropWInput = document.getElementById('crop-w');
+        const cropHInput = document.getElementById('crop-h');
+        
+        const scaleRange = document.getElementById('img-scale');
+        const scaleVal = document.getElementById('scale-val');
+        const rotateRange = document.getElementById('img-rotate');
+        const rotateVal = document.getElementById('rotate-val');
+        const flipXCheckbox = document.getElementById('img-flip-x');
+        const brightnessRange = document.getElementById('img-brightness');
+        const brightnessVal = document.getElementById('brightness-val');
+        const hueRange = document.getElementById('img-hue');
+        const hueVal = document.getElementById('hue-val');
+        const opacityRange = document.getElementById('img-opacity');
+        const opacityVal = document.getElementById('opacity-val');
+        
+        const workspaceZoom = document.getElementById('workspace-zoom');
+        const workspaceZoomVal = document.getElementById('workspace-zoom-val');
+        const workspaceScaler = document.getElementById('workspace-scaler');
+        
+        const modeRadios = document.getElementsByName('tool-mode');
+        const transparentSettings = document.getElementById('transparent-settings');
+        const colorChip = document.getElementById('selected-color-chip');
+        const colorText = document.getElementById('selected-color-text');
+        const enableToleranceCheckbox = document.getElementById('enable-tolerance');
+        const toleranceContainer = document.getElementById('tolerance-container');
+        const toleranceRange = document.getElementById('tolerance-range');
+        const toleranceVal = document.getElementById('tolerance-val');
+        const resetTransparentBtn = document.getElementById('reset-transparent-btn');
+        const saveBtn = document.getElementById('save-btn');
+        const fileInput = document.getElementById('file-input');
+        const selectFileBtn = document.getElementById('select-file-btn');
+
+        let imgState = {
+            x: 0,
+            y: 0,
+            scale: 1,
+            rotate: 0,
+            flipX: false,
+            brightness: 0,
+            hue: 0,
+            opacity: 1
+        };
+
+        let currentMode = 'move';
+        let transparentColor = null; // [r, g, b]
+        let useTolerance = false;
+        let toleranceValue = 20;
+
+        let isDragging = false;
+        let startX, startY;
+        let originalW = 0;
+        let originalH = 0;
+
+        // モード切替
+        modeRadios.forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                currentMode = e.target.value;
+                if (currentMode === 'eyedropper') {
+                    transparentSettings.style.display = 'flex';
+                    previewCanvas.className = 'mode-eyedropper';
+                } else {
+                    transparentSettings.style.display = 'none';
+                    previewCanvas.className = 'mode-move';
+                }
+            });
+        });
+
+        enableToleranceCheckbox.addEventListener('change', (e) => {
+            useTolerance = e.target.checked;
+            toleranceContainer.style.display = useTolerance ? 'block' : 'none';
+            updatePreviewImage();
+        });
+
+        function setTolerance(val) {
+            val = Math.max(1, Math.min(100, val));
+            toleranceRange.value = val;
+            toleranceVal.innerText = val;
+            toleranceValue = val;
+            if (useTolerance) updatePreviewImage();
+        }
+        toleranceRange.addEventListener('input', (e) => setTolerance(parseInt(e.target.value)));
+        document.getElementById('tolerance-minus').addEventListener('click', () => setTolerance(toleranceValue - 1));
+        document.getElementById('tolerance-plus').addEventListener('click', () => setTolerance(toleranceValue + 1));
+
+        resetTransparentBtn.addEventListener('click', () => {
+            transparentColor = null;
+            colorChip.style.backgroundColor = 'transparent';
+            colorText.innerText = '未選択';
+            updatePreviewImage();
+        });
+
+        // 枠のサイズ変更を反映
+        function updateCropFrameSize() {
+            const w = parseInt(cropWInput.value) || 100;
+            const h = parseInt(cropHInput.value) || 100;
+            cropFrame.style.width = w + 'px';
+            cropFrame.style.height = h + 'px';
+        }
+        cropWInput.addEventListener('input', updateCropFrameSize);
+        cropHInput.addEventListener('input', updateCropFrameSize);
+        updateCropFrameSize();
+
+        // ドラッグ＆ドロップ
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => { e.preventDefault(); e.stopPropagation(); }, false);
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const files = e.dataTransfer.files;
+            if (files && files[0]) loadImageFile(files[0]);
+        }, false);
+
+        // ファイル選択ボタン（PC・スマホからの画像選択）
+        selectFileBtn.addEventListener('click', () => {
+            fileInput.click();
+        });
+        fileInput.addEventListener('change', (e) => {
+            const files = e.target.files;
+            if (files && files[0]) loadImageFile(files[0]);
+            fileInput.value = ''; // 同じファイルを連続選択できるようにリセット
+        });
+
+        function loadImageFile(file) {
+            if (!file.type.match('image.*')) {
+                alert('画像ファイルを選択してください。');
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                sourceImage.src = e.target.result;
+                sourceImage.onload = function() {
+                    originalW = sourceImage.naturalWidth;
+                    originalH = sourceImage.naturalHeight;
+                    
+                    previewCanvas.width = originalW;
+                    previewCanvas.height = originalH;
+                    previewCanvas.style.display = 'block';
+                    dropMsg.classList.add('hidden');
+                    
+                    imgState.x = 0;
+                    imgState.y = 0;
+                    scaleRange.value = 100; scaleVal.innerText = 100; imgState.scale = 1;
+                    rotateRange.value = 0; rotateVal.innerText = 0; imgState.rotate = 0;
+                    flipXCheckbox.checked = false; imgState.flipX = false;
+                    brightnessRange.value = 0; brightnessVal.innerText = 0; imgState.brightness = 0;
+                    hueRange.value = 0; hueVal.innerText = 0; imgState.hue = 0;
+                    opacityRange.value = 100; opacityVal.innerText = 100; imgState.opacity = 1;
+                    transparentColor = null;
+                    colorChip.style.backgroundColor = 'transparent';
+                    colorText.innerText = '未選択';
+
+                    updatePreviewImage();
+                    updateImageTransform();
+                };
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // プレビュー用キャンバスに画像を転写＆透過処理を適用
+        function updatePreviewImage() {
+            if (!sourceImage.src) return;
+            previewCtx.clearRect(0, 0, originalW, originalH);
+            previewCtx.drawImage(sourceImage, 0, 0, originalW, originalH);
+
+            if (transparentColor) {
+                const imgData = previewCtx.getImageData(0, 0, originalW, originalH);
+                const data = imgData.data;
+                const [tr, tg, tb] = transparentColor;
+                const tol = toleranceValue;
+
+                for (let i = 0; i < data.length; i += 4) {
+                    const r = data[i];
+                    const g = data[i+1];
+                    const b = data[i+2];
+
+                    let isMatch = false;
+                    if (!useTolerance) {
+                        if (r === tr && g === tg && b === tb) isMatch = true;
+                    } else {
+                        const diff = Math.sqrt(Math.pow(r - tr, 2) + Math.pow(g - tg, 2) + Math.pow(b - tb, 2));
+                        if (diff <= tol * 3.5) isMatch = true;
+                    }
+
+                    if (isMatch) {
+                        data[i+3] = 0;
+                    }
+                }
+                previewCtx.putImageData(imgData, 0, 0);
+            }
+        }
+
+        // 画像の配置・変形CSSの更新
+        function updateImageTransform() {
+            if (!sourceImage.src) return;
+            const canvasAreaW = canvasArea.clientWidth;
+            const canvasAreaH = canvasArea.clientHeight;
+            
+            previewCanvas.style.width = originalW + 'px';
+            previewCanvas.style.height = originalH + 'px';
+            
+            const left = (canvasAreaW - originalW) / 2 + imgState.x;
+            const top = (canvasAreaH - originalH) / 2 + imgState.y;
+            
+            previewCanvas.style.left = left + 'px';
+            previewCanvas.style.top = top + 'px';
+
+            const scaleXFactor = imgState.flipX ? -imgState.scale : imgState.scale;
+            const scaleYFactor = imgState.scale;
+
+            previewCanvas.style.transform = `scale(${scaleXFactor}, ${scaleYFactor}) rotate(${imgState.rotate}deg)`;
+            
+            const cssBrightness = 1 + (imgState.brightness / 100);
+            previewCanvas.style.filter = `brightness(${cssBrightness}) hue-rotate(${imgState.hue}deg)`;
+            previewCanvas.style.opacity = imgState.opacity;
+        }
+
+        // マウス操作（移動 or スポイト）
+        previewCanvas.addEventListener('mousedown', (e) => {
+            if (currentMode === 'move') {
+                isDragging = true;
+                startX = e.clientX - imgState.x;
+                startY = e.clientY - imgState.y;
+                e.preventDefault();
+            } else if (currentMode === 'eyedropper') {
+                const rect = previewCanvas.getBoundingClientRect();
+                const clientX = e.clientX - rect.left;
+                const clientY = e.clientY - rect.top;
+                
+                const scaleX = previewCanvas.width / rect.width;
+                const scaleY = previewCanvas.height / rect.height;
+                const px = Math.floor(clientX * scaleX);
+                const py = Math.floor(clientY * scaleY);
+
+                if (px >= 0 && px < originalW && py >= 0 && py < originalH) {
+                    const pixel = previewCtx.getImageData(px, py, 1, 1).data;
+                    transparentColor = [pixel[0], pixel[1], pixel[2]];
+                    
+                    const hex = "#" + ((1 << 24) + (pixel[0] << 16) + (pixel[1] << 8) + pixel[2]).toString(16).slice(1).toUpperCase();
+                    colorChip.style.backgroundColor = hex;
+                    colorText.innerText = `${hex} (R:${pixel[0]} G:${pixel[1]} B:${pixel[2]})`;
+                    
+                    updatePreviewImage();
+                }
+            }
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!isDragging || currentMode !== 'move') return;
+            imgState.x = e.clientX - startX;
+            imgState.y = e.clientY - startY;
+            updateImageTransform();
+        });
+
+        window.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+
+        // パラメータ変更関数
+        function setScale(val) {
+            val = Math.max(10, Math.min(300, val));
+            scaleRange.value = val; scaleVal.innerText = val;
+            imgState.scale = val / 100;
+            updateImageTransform();
+        }
+        function setRotate(val) {
+            if (val < 0) val = 360 + (val % 360);
+            if (val > 360) val = val % 360;
+            rotateRange.value = val; rotateVal.innerText = val;
+            imgState.rotate = val;
+            updateImageTransform();
+        }
+        function setBrightness(val) {
+            val = Math.max(-100, Math.min(100, val));
+            brightnessRange.value = val; brightnessVal.innerText = val;
+            imgState.brightness = val;
+            updateImageTransform();
+        }
+        function setHue(val) {
+            val = Math.max(-180, Math.min(180, val));
+            hueRange.value = val; hueVal.innerText = val;
+            imgState.hue = val;
+            updateImageTransform();
+        }
+        function setOpacity(val) {
+            val = Math.max(10, Math.min(100, val));
+            opacityRange.value = val; opacityVal.innerText = val;
+            imgState.opacity = val / 100;
+            updateImageTransform();
+        }
+        function setZoom(val) {
+            val = Math.max(10, Math.min(200, val)); // 変更: 最小値を50から10に変更
+            workspaceZoom.value = val; workspaceZoomVal.innerText = val;
+            workspaceScaler.style.transform = `scale(${val / 100})`;
+        }
+
+        scaleRange.addEventListener('input', (e) => setScale(parseInt(e.target.value)));
+        rotateRange.addEventListener('input', (e) => setRotate(parseInt(e.target.value)));
+        flipXCheckbox.addEventListener('change', (e) => {
+            imgState.flipX = e.target.checked;
+            updateImageTransform();
+        });
+        brightnessRange.addEventListener('input', (e) => setBrightness(parseInt(e.target.value)));
+        hueRange.addEventListener('input', (e) => setHue(parseInt(e.target.value)));
+        opacityRange.addEventListener('input', (e) => setOpacity(parseInt(e.target.value)));
+        workspaceZoom.addEventListener('input', (e) => setZoom(parseInt(e.target.value)));
+
+        document.getElementById('scale-minus').addEventListener('click', () => setScale(parseInt(scaleRange.value) - 1));
+        document.getElementById('scale-plus').addEventListener('click', () => setScale(parseInt(scaleRange.value) + 1));
+        document.getElementById('rotate-minus').addEventListener('click', () => setRotate(parseInt(rotateRange.value) - 1));
+        document.getElementById('rotate-plus').addEventListener('click', () => setRotate(parseInt(rotateRange.value) + 1));
+        document.getElementById('brightness-minus').addEventListener('click', () => setBrightness(parseInt(brightnessRange.value) - 1));
+        document.getElementById('brightness-plus').addEventListener('click', () => setBrightness(parseInt(brightnessRange.value) + 1));
+        document.getElementById('hue-minus').addEventListener('click', () => setHue(parseInt(hueRange.value) - 1));
+        document.getElementById('hue-plus').addEventListener('click', () => setHue(parseInt(hueRange.value) + 1));
+        document.getElementById('opacity-minus').addEventListener('click', () => setOpacity(parseInt(opacityRange.value) - 1));
+        document.getElementById('opacity-plus').addEventListener('click', () => setOpacity(parseInt(opacityRange.value) + 1));
+        document.getElementById('zoom-minus').addEventListener('click', () => setZoom(parseInt(workspaceZoom.value) - 5));
+        document.getElementById('zoom-plus').addEventListener('click', () => setZoom(parseInt(workspaceZoom.value) + 5));
+
+        // 保存ボタン
+        saveBtn.addEventListener('click', () => {
+            if (!sourceImage.src) {
+                alert('画像が読み込まれていません。');
+                return;
+            }
+
+            const cropW = parseInt(cropWInput.value) || 100;
+            const cropH = parseInt(cropHInput.value) || 100;
+
+            const canvas = document.createElement('canvas');
+            canvas.width = cropW;
+            canvas.height = cropH;
+            const ctx = canvas.getContext('2d');
+
+            const canvasAreaW = canvasArea.clientWidth;
+            const canvasAreaH = canvasArea.clientHeight;
+            const frameCenterX = canvasAreaW / 2;
+            const frameCenterY = canvasAreaH / 2;
+            const frameLeft = frameCenterX - (cropW / 2);
+            const frameTop = frameCenterY - (cropH / 2);
+
+            ctx.save();
+            ctx.translate(-frameLeft, -frameTop);
+
+            const imgCenterX = (canvasAreaW - originalW) / 2 + imgState.x + (originalW / 2);
+            const imgCenterY = (canvasAreaH - originalH) / 2 + imgState.y + (originalH / 2);
+
+            ctx.translate(imgCenterX, imgCenterY);
+            ctx.rotate(imgState.rotate * Math.PI / 180);
+            
+            const scaleX = imgState.flipX ? -imgState.scale : imgState.scale;
+            const scaleY = imgState.scale;
+            ctx.scale(scaleX, scaleY);
+
+            const cssBrightness = 1 + (imgState.brightness / 100);
+            ctx.filter = `brightness(${cssBrightness}) hue-rotate(${imgState.hue}deg)`;
+            ctx.globalAlpha = imgState.opacity;
+
+            ctx.drawImage(previewCanvas, -originalW / 2, -originalH / 2, originalW, originalH);
+            ctx.restore();
+
+            const now = new Date();
+            const pad = (n) => String(n).padStart(2, '0');
+            const fileName = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}.png`;
+
+            const link = document.createElement('a');
+            link.href = canvas.toDataURL('image/png');
+            link.download = fileName;
+            link.click();
+        });
+    </script>
+</body>
+</html>
