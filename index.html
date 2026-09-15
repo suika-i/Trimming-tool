@@ -1,4 +1,12 @@
-﻿<!DOCTYPE html>
+<!-- 
+ * Copyright (c) 2026 井上すいか🍉. All rights reserved.
+ * 
+ * 制作: 井上すいか🍉
+ * コード生成支援: Gemini (Google)
+ * コード生成支援: Claude (Anthropic)
+ -->
+
+<!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
@@ -370,7 +378,7 @@
         <div class="workspace-scaler" id="workspace-scaler">
             <div class="canvas-area" id="canvas-area">
                 <!-- 動かす画像（プレビューはキャンバス経由でリアルタイム透過） -->
-                <canvas id="preview-canvas" style="position: absolute; display: none; cursor: grab;"></canvas>
+                <canvas id="preview-canvas" style="position: absolute; display: none; cursor: grab; touch-action: none;"></canvas>
                 <!-- 中央の切り抜き枠（見た目のガイド） -->
                 <div class="crop-frame" id="crop-frame"></div>
             </div>
@@ -607,12 +615,15 @@
             previewCanvas.style.opacity = imgState.opacity;
         }
 
-        // マウス操作（移動 or スポイト）
-        previewCanvas.addEventListener('mousedown', (e) => {
+        // マウス・タッチ操作（移動 or スポイト）
+        // ポインターイベントを使うことで、PCのマウスでもスマホ・タブレットのタッチでも同じコードで動作する
+        previewCanvas.addEventListener('pointerdown', (e) => {
             if (currentMode === 'move') {
                 isDragging = true;
                 startX = e.clientX - imgState.x;
                 startY = e.clientY - imgState.y;
+                // ドラッグ中はこのポインターのイベントを確実に受け取り続ける（指が画像の外に出ても追跡できるようにする）
+                previewCanvas.setPointerCapture(e.pointerId);
                 e.preventDefault();
             } else if (currentMode === 'eyedropper') {
                 const rect = previewCanvas.getBoundingClientRect();
@@ -634,17 +645,26 @@
                     
                     updatePreviewImage();
                 }
+                e.preventDefault();
             }
         });
 
-        window.addEventListener('mousemove', (e) => {
+        previewCanvas.addEventListener('pointermove', (e) => {
             if (!isDragging || currentMode !== 'move') return;
             imgState.x = e.clientX - startX;
             imgState.y = e.clientY - startY;
             updateImageTransform();
+            e.preventDefault();
         });
 
-        window.addEventListener('mouseup', () => {
+        previewCanvas.addEventListener('pointerup', (e) => {
+            isDragging = false;
+            if (previewCanvas.hasPointerCapture(e.pointerId)) {
+                previewCanvas.releasePointerCapture(e.pointerId);
+            }
+        });
+
+        previewCanvas.addEventListener('pointercancel', () => {
             isDragging = false;
         });
 
